@@ -1,4 +1,6 @@
-﻿using AutomaticComentaryService.Services;
+﻿using System.ComponentModel;
+using AutomaticComentaryService.Models;
+using AutomaticComentaryService.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AutomaticComentaryService.Controllers
@@ -39,14 +41,45 @@ Examples:
             _tts = tts;
         }
 
-        [HttpPost("commentate")]
-        public async Task<IActionResult> CommentateAsync([FromBody] string gameEvent, CancellationToken cancellationToken = default)
+        [HttpPost("comentate")]
+        public async Task<IActionResult> CommentateAsync([FromBody] string prompt, CancellationToken cancellationToken = default)
         {
-            var prompt = $"{_systemPrompt}\n### EVENT: {gameEvent}### COMMENTARY:";
-            var commentary = await _ollama.GenerateCompletionAsync(prompt, model: "llama3", cancellationToken);
-
+            var commentary = await _ollama.GenerateCompletionAsync(prompt, model: "blood-bowl-comentator-model", cancellationToken);
+            Console.WriteLine(commentary);
             var filename = await _tts.GenerateWavAsync(commentary);
             return Ok(new { commentary, audioFile = filename });
         }
+        [HttpPost("AddEvent")]
+        public IActionResult AddEvent([FromBody] ComentaryRequest request, CancellationToken cancellationToken = default)
+        {
+            string prompt = AutomaticComentaryService.Models.CommentaryPromptBuilder.BuildPrompt(request);
+            if (string.IsNullOrEmpty(prompt))
+                return Ok();
+            ComentaryQueueModel.Enqueue(prompt, 1);
+            return Ok();
+        }
+
+        [HttpPost("AddNewGame")]
+        public IActionResult AddNewGame(CancellationToken cancellationToken = default)
+        {
+            string prompt = AutomaticComentaryService.Models.CommentaryPromptBuilder.BuildNewGamePrompt();
+            if (string.IsNullOrEmpty(prompt))
+                return Ok();
+            ComentaryQueueModel.Enqueue(prompt, 1);
+            return Ok();
+        }
+
+        [HttpGet("GetLast")]
+        public async Task<IActionResult> Get()
+        {
+            if(ComentaryQueueModel.Instance.MessageQueue.Count == 0)
+            {
+                return NoContent();
+            }
+           return await CommentateAsync(ComentaryQueueModel.Dequeue());
+        }
+
+
+       
     }
 }

@@ -1,55 +1,59 @@
-# Base runtime image with Python setup
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+# -------------------------------
+# Stage 0: Base image with CUDA, .NET Runtime, and Python TTS support
+# -------------------------------
+FROM pytorch/pytorch:2.2.2-cuda12.1-cudnn8-runtime AS base
 
-# Install Python3, pip, and the venv module
-USER root
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+# 1. Install .NET 8 ASP.NET Core Runtime
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      wget apt-transport-https gnupg ca-certificates && \
+    wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends aspnetcore-runtime-8.0 && \
+    rm -rf /var/lib/apt/lists/* packages-microsoft-prod.deb
 
-# Create a Python virtual environment and install required packages there
-RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install TTS torch soundfile
+# 2. Install Python 3, venv, and dependencies for Coqui TTS
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3 python3-venv python3-pip && \
+    rm -rf /var/lib/apt/lists/*
 
-# Update PATH so that the virtual environment's python is used by default
-ENV PATH="/opt/venv/bin:${PATH}"
-ENV PYTHONUNBUFFERED=1
+# 3. Create and activate a virtual environment, install TTS, torch, soundfile
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install TTS torch soundfile
 
-# Set working directory and expose ports
+# Make venv Python the default
+ENV PATH="/opt/venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
-EXPOSE 8080
-EXPOSE 8081
+EXPOSE 8080 8081
 
-# --------------------------
-# Build stage
+# -------------------------------
+# Stage 1: Build .NET 8 application
+# -------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["AutomaticComentaryService/AutomaticComentaryService.csproj", "AutomaticComentaryService/"]
-RUN dotnet restore "./AutomaticComentaryService/AutomaticComentaryService.csproj"
+RUN dotnet restore "AutomaticComentaryService/AutomaticComentaryService.csproj"
 COPY . .
 WORKDIR "/src/AutomaticComentaryService"
-RUN dotnet build "./AutomaticComentaryService.csproj" -c $BUILD_CONFIGURATION -o /app/build
+RUN dotnet publish "./AutomaticComentaryService.csproj" \
+    -c Release -o /app/publish /p:UseAppHost=false
 
-# --------------------------
-# Publish stage
-FROM build AS publish
-ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./AutomaticComentaryService.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
-
-# --------------------------
-# Final runtime image (inherits Python+venv setup from 'base')
+# -------------------------------
+# Stage 2: Final image
+# -------------------------------
 FROM base AS final
 WORKDIR /app
 
-# Copy published .NET app
-COPY --from=publish /app/publish .
+# Copy .NET published app
+COPY --from=build /app/publish ./
 
-# Copy the Python script required by your application
+# Copy Python TTS script
 COPY Scripts/generate_wav.py Scripts/generate_wav.py
 
-# Start the .NET service
+# Entrypoint: run the .NET service
 ENTRYPOINT ["dotnet", "AutomaticComentaryService.dll"]
