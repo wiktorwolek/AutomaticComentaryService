@@ -7,24 +7,47 @@
 
             public static ComentaryQueueModel Instance => _instance;
 
-            public PriorityQueue<string, int> MessageQueue { get; } = new PriorityQueue<string, int>();
+            private PriorityQueue<ComentaryRequest, int> MessageQueue { get; } = new PriorityQueue<ComentaryRequest, int>();
+            private PriorityQueue<string, int> PromptQueue { get; } = new PriorityQueue<string, int>();
 
             private ComentaryQueueModel() { }
 
-            public static string Dequeue()
+            public ComentaryRequest MessageQueueDequeue()
             {
             lock (ComentaryQueueModel.Instance)
             {
                 return Instance.MessageQueue.Dequeue();
             }
             }
-            public static void Enqueue(string message, int priority=1)
+            public  void MessageQueueEnqueue(ComentaryRequest message, int priority=1)
             {
             lock (Instance.MessageQueue)
             {
                 Instance.MessageQueue.Enqueue(message, priority);
             }
             }
-        }
+            public  string PromptQueueDequeue()
+            {
+                lock (ComentaryQueueModel.Instance)
+                {
+                    return Instance.PromptQueue.Dequeue();
+                }
+            }
+            public  void PromptQueueEnqueue(string message, int priority = 1)
+            {
+                lock (Instance.PromptQueue)
+                {
+                    Instance.PromptQueue.Enqueue(message, priority);
+                }
+            }
+            public  int GetPromptCount()
+            {
+                return Instance.PromptQueue.Count;
+            }
+            public int GetMessageCount()
+            {
+                return Instance.MessageQueue.Count;
+            }
+    }
     
 }

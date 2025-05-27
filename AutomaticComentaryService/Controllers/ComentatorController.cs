@@ -12,27 +12,7 @@ namespace AutomaticComentaryService.Controllers
         private readonly IOllamaClient _ollama;
         private readonly ITTSEngine _tts;
 
-        private readonly string _systemPrompt = """
-You are a professional, high-energy Blood Bowl commentator known for short, punchy, and dramatic one-liners.
-
-Your job is to describe game events with flair. Always follow these rules:
-1. Comment ONLY on the specific event.
-2. Use exciting, over-the-top sports metaphors.
-3. Include 1–2 of these key Blood Bowl terms: "BLITZ", "POW", "CAS", "GFI", "TOUCHDOWN", "BLOCK", "DODGE", "FOUL".
-4. Keep responses under 25 words. Brevity = excitement.
-5. Speak like a TV sports announcer hyping up a wild moment.
-
-Format:
-### EVENT: <brief description of what happened>
-### COMMENTARY: "<your wild and vivid one-liner>"
-
-Examples:
-### EVENT: Orc Blitzer POWs Human Thrower  
-### COMMENTARY: "BRUTAL HIT! The Thrower FLIPS like a pancake – textbook POW!"
-
-### EVENT: Elf fails Dodge roll  
-### COMMENTARY: "ELF DOWN! He gambled on grace and paid in faceplants!"
-""";
+        
 
 
         public ComentaryController(IOllamaClient ollama, ITTSEngine tts)
@@ -51,11 +31,11 @@ Examples:
         }
         [HttpPost("AddEvent")]
         public IActionResult AddEvent([FromBody] ComentaryRequest request, CancellationToken cancellationToken = default)
-        {
-            string prompt = AutomaticComentaryService.Models.CommentaryPromptBuilder.BuildPrompt(request);
-            if (string.IsNullOrEmpty(prompt))
-                return Ok();
-            ComentaryQueueModel.Enqueue(prompt, 1);
+        {   ComentaryQueueModel.Instance.MessageQueueEnqueue(request, 1);
+            if(request.ActionType?.ToUpperInvariant()=="ACTIONTYPE.END_TURN")
+            {
+                ComentaryQueueModel.Instance.PromptQueueEnqueue(CommentaryPromptBuilder.BuildPrompt());
+            }
             return Ok();
         }
 
@@ -65,18 +45,18 @@ Examples:
             string prompt = AutomaticComentaryService.Models.CommentaryPromptBuilder.BuildNewGamePrompt();
             if (string.IsNullOrEmpty(prompt))
                 return Ok();
-            ComentaryQueueModel.Enqueue(prompt, 1);
+            ComentaryQueueModel.Instance.PromptQueueEnqueue(prompt, 1);
             return Ok();
         }
 
         [HttpGet("GetLast")]
         public async Task<IActionResult> Get()
         {
-            if(ComentaryQueueModel.Instance.MessageQueue.Count == 0)
+            if(ComentaryQueueModel.Instance.GetPromptCount() == 0)
             {
                 return NoContent();
             }
-           return await CommentateAsync(ComentaryQueueModel.Dequeue());
+           return await CommentateAsync(ComentaryQueueModel.Instance.PromptQueueDequeue());
         }
 
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using AutomaticComentaryService.Models;
+using Microsoft.Extensions.Primitives;
 namespace AutomaticComentaryService.Models
 {
     public static class CommentaryPromptBuilder
@@ -24,18 +25,28 @@ namespace AutomaticComentaryService.Models
             switch (action)
             {
                 case "ACTIONTYPE.MOVE":
-                    return $"Write one short, punchy, humorous, and dramatic commentary line describing {player} moving to {position}.";
+                    return $";{player} moving to {position}.";
                 case "ACTIONTYPE.BLOCK":
-                    return $"Write one short, punchy, humorous, and dramatic commentary line describing {player} blocking at {position}.";
+                    return $";{player} blocking at {position}.";
                 case "ACTIONTYPE.BLITZ":
-                    return $"Write one short, punchy, humorous, and dramatic commentary line describing {player} blitzing to {position}.";
+                    return $";{player} blitzing to {position}.";
                 case "ACTIONTYPE.FOUL":
-                    return $"Write one short, punchy, humorous, and dramatic commentary line describing {player} committing a foul at {position}.";
+                    return $";{player} committing a foul at {position}.";
                 case "ACTIONTYPE.PASS":
-                    return $"Write one short, punchy, humorous, and dramatic commentary line describing {player} passing the ball to {position}.";
+                    return $";{player} passing the ball to {position}.";
                 default:
                     return $"";
             }
+        }
+        public static string BuildPrompt()
+        {
+            
+            string prompt = string.Empty;
+            while (ComentaryQueueModel.Instance.GetMessageCount()>0)
+            {
+                prompt += BuildPrompt(ComentaryQueueModel.Instance.MessageQueueDequeue());
+            }
+            return prompt;
         }
         public static string BuildNewGamePrompt()
         {
