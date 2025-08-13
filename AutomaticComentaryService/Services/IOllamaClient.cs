@@ -5,13 +5,20 @@ namespace AutomaticComentaryService.Services
 {
     public interface IOllamaClient
     {
+      
         /// <summary>
-        /// Generates a text completion from the given prompt.
+        /// Send a user message to a chat session and get the assistant reply.
         /// </summary>
-        /// <param name="prompt">The input prompt text.</param>
-        /// <param name="model">The model name (default "llama2").</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <returns>Completed text from the model.</returns>
-        Task<string> GenerateCompletionAsync(string prompt, string model = "llama2", CancellationToken cancellationToken = default);
+        Task<string> ChatAsync(
+            string sessionId,
+            string userMessage,
+            string model = "llama3",
+            CancellationToken ct = default);
+
+        /// <summary>Reset (forget) a chat session.</summary>
+        Task ResetSessionAsync(string sessionId);
+
+        /// <summary>Optionally trim history to last N turns to save tokens.</summary>
+        void TrimSession(string sessionId, int maxUserAssistantPairs = 10);
     }
 }

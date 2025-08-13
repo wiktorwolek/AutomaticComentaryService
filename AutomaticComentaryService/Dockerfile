@@ -55,5 +55,10 @@ COPY --from=build /app/publish ./
 # Copy Python TTS script
 COPY Scripts/generate_wav.py Scripts/generate_wav.py
 
+COPY ./RagDatabase /app/RagDatabase
+
+RUN dotnet tool install --global dotnet-trace
+ENV PATH="$PATH:/root/.dotnet/tools"
+
 # Entrypoint: run the .NET service
 ENTRYPOINT ["dotnet", "AutomaticComentaryService.dll"]

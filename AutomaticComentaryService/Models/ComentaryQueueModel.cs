@@ -1,53 +1,82 @@
-﻿namespace AutomaticComentaryService.Models
+﻿using Ollama;
+
+namespace AutomaticComentaryService.Models
 {
-   
-        public class ComentaryQueueModel
+    public class ComentaryQueueModel
+    {
+        private static readonly ComentaryQueueModel _instance = new ComentaryQueueModel();
+        public static ComentaryQueueModel Instance => _instance;
+
+        private readonly Queue<ComentaryRequest> _messageQueue = new();
+        private readonly Queue<string> _promptQueue = new();
+
+        // Dedicated lock objects
+        private readonly object _messageLock = new();
+        private readonly object _promptLock = new();
+
+        private ComentaryQueueModel() { }
+        public void Reset()
         {
-            private static readonly ComentaryQueueModel _instance = new ComentaryQueueModel();
+            lock (_messageLock)
+            {
+                _messageQueue.Clear();
+                _promptQueue.Clear();
+            }
+        }
+        public void MessageQueueEnqueue(ComentaryRequest message)
+        {
+            lock (_messageLock)
+            {
+                _messageQueue.Enqueue(message);
+            }
+        }
 
-            public static ComentaryQueueModel Instance => _instance;
+        public ComentaryRequest MessageQueueDequeue()
+        {
+            lock (_messageLock)
+            {
+                return _messageQueue.Dequeue();
+            }
+        }
 
-            private PriorityQueue<ComentaryRequest, int> MessageQueue { get; } = new PriorityQueue<ComentaryRequest, int>();
-            private PriorityQueue<string, int> PromptQueue { get; } = new PriorityQueue<string, int>();
+        public ComentaryRequest MessageQueuePeek()
+        {
+            lock (_messageLock)
+            {
+                return _messageQueue.Peek();
+            }
+        }
 
-            private ComentaryQueueModel() { }
+        public int GetMessageCount()
+        {
+            lock (_messageLock)
+            {
+                return _messageQueue.Count;
+            }
+        }
 
-            public ComentaryRequest MessageQueueDequeue()
+        public void PromptQueueEnqueue(string message)
+        {
+            lock (_promptLock)
             {
-            lock (ComentaryQueueModel.Instance)
+                _promptQueue.Enqueue(message);
+            }
+        }
+
+        public string PromptQueueDequeue()
+        {
+            lock (_promptLock)
             {
-                return Instance.MessageQueue.Dequeue();
+                return _promptQueue.Dequeue();
             }
-            }
-            public  void MessageQueueEnqueue(ComentaryRequest message, int priority=1)
+        }
+
+        public int GetPromptCount()
+        {
+            lock (_promptLock)
             {
-            lock (Instance.MessageQueue)
-            {
-                Instance.MessageQueue.Enqueue(message, priority);
+                return _promptQueue.Count;
             }
-            }
-            public  string PromptQueueDequeue()
-            {
-                lock (ComentaryQueueModel.Instance)
-                {
-                    return Instance.PromptQueue.Dequeue();
-                }
-            }
-            public  void PromptQueueEnqueue(string message, int priority = 1)
-            {
-                lock (Instance.PromptQueue)
-                {
-                    Instance.PromptQueue.Enqueue(message, priority);
-                }
-            }
-            public  int GetPromptCount()
-            {
-                return Instance.PromptQueue.Count;
-            }
-            public int GetMessageCount()
-            {
-                return Instance.MessageQueue.Count;
-            }
+        }
     }
-    
 }

@@ -1,34 +1,109 @@
-﻿using System;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
-using Ollama; // Ensure that you have installed the necessary Ollama NuGet package
+﻿using System.Collections.Concurrent;
+using System.Net.Http.Json;
+using System.Text.Json;
+using AutomaticComentaryService.Services;
 
-namespace AutomaticComentaryService.Services
+public sealed class OllamaClient : IOllamaClient
 {
-    public class OllamaClient : IOllamaClient
+    private const int MaxAssistantMemory = 5;
+    private readonly HttpClient _http;
+
+    // In-memory per-session state
+    private sealed class Session
     {
-        private readonly OllamaApiClient _ollamaApiClient;
-
-        // The base URL is fixed but can be overridden if needed.
-        public OllamaClient(HttpClient httpClient, string baseUrl = "http://host.docker.internal:11434")
-        {
-            
-            // Create the API client with the /api endpoint appended.
-            _ollamaApiClient = new OllamaApiClient(httpClient, new Uri(baseUrl + "/api"));
-        }
-
-        /// <inheritdoc />
-        public async Task<string> GenerateCompletionAsync(string prompt, string model = "llama2", CancellationToken cancellationToken = default)
-        {
-            var response = await _ollamaApiClient.Completions.GenerateCompletionAsync(
-                model,
-                prompt,
-                stream: false,
-                cancellationToken: cancellationToken);
-
-            // Return the completion text (or empty if null)
-            return response?.Response ?? string.Empty;
-        }
+        public List<OllamaChatMessage> Messages { get; } = new();
+        public int[]? Context { get; set; }
+        public string Model { get; set; } = "llama3";
+        public bool HasSystem => Messages.Count > 0 && Messages[0].Role == "system";
     }
+
+    private readonly ConcurrentDictionary<string, Session> _sessions = new();
+
+    public OllamaClient(IHttpClientFactory factory)
+    {
+        _http = factory.CreateClient("ollama");
+        // Point to your Ollama instance (override in Program.cs if you prefer)
+        if (_http.BaseAddress is null)
+            _http.BaseAddress = new Uri("http://host.docker.internal:11434");
+    }
+
+    public async Task<string> ChatAsync(
+        string sessionId,
+        string userMessage,
+        string model = "llama3",
+        CancellationToken ct = default)
+    {
+        var session = _sessions.GetOrAdd(sessionId, _ =>
+        {
+            var s = new Session { Model = model };
+            s.Messages.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt });
+            return s;
+        });
+
+
+        // Set/refresh model if provided
+        var reducedHistory = new List<OllamaChatMessage>();
+
+        // 1. Always keep the system prompt
+        reducedHistory.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt });
+
+        // 2. Keep last N assistant messages
+        var lastAssistants = session.Messages
+            .Where(m => m.Role == "assistant")
+            .TakeLast(MaxAssistantMemory)
+            .ToList();
+        reducedHistory.AddRange(lastAssistants);
+
+        // 3. Add current user prompt
+        reducedHistory.Add(new OllamaChatMessage { Role = "user", Content = userMessage });
+
+        var request = new OllamaChatRequest
+        {
+            Model = model,
+            Messages = reducedHistory,
+            Stream = false,
+            KeepAlive = "10m",
+            Context = session.Context,
+        };
+
+        using var resp = await _http.PostAsJsonAsync("api/chat", request, ct);
+        resp.EnsureSuccessStatusCode();
+
+        var json = await resp.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken: ct);
+        var reply = json?.Message?.Content?.Trim() ?? string.Empty;
+
+        // Add to full session history (optional, for debugging or logging)
+        session.Messages.Add(new OllamaChatMessage { Role = "assistant", Content = reply });
+
+        if (json?.Context is { Length: > 0 })
+            session.Context = json.Context;
+
+        return reply;
+    }
+
+    public Task ResetSessionAsync(string sessionId)
+    {
+        _sessions[sessionId] = new Session
+        {
+            Model = "llama3",
+            Messages = { new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt } }
+        };
+        return Task.CompletedTask;
+    }
+
+    public void TrimSession(string sessionId, int maxUserAssistantPairs = 10)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
+
+        var start = session.HasSystem ? 1 : 0;
+        var tail = session.Messages.Skip(start).ToList();
+
+        var maxMsgs = Math.Max(0, Math.Min(tail.Count, maxUserAssistantPairs * 2));
+        var trimmedTail = tail.Skip(Math.Max(0, tail.Count - maxMsgs)).ToList();
+
+        session.Messages.Clear();
+        session.Messages.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt });
+        session.Messages.AddRange(trimmedTail);
+    }
+
 }

@@ -1,19 +1,54 @@
+using System.Diagnostics;
 using AutomaticComentaryService.Services;
+using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Mvc.NewtonsoftJson;
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 104_857_600; // 100 MB
+});
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddNewtonsoftJson(options =>
+    {
+        options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
+        options.SerializerSettings.Formatting = Newtonsoft.Json.Formatting.None;
+        options.SerializerSettings.CheckAdditionalContent = false;
+        options.SerializerSettings.DateParseHandling = Newtonsoft.Json.DateParseHandling.None;
+        options.SerializerSettings.MetadataPropertyHandling = Newtonsoft.Json.MetadataPropertyHandling.Ignore;
+    });
+
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<GzipCompressionProvider>();
+});
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Fastest;
+});
+
+
+
 builder.Services.AddSingleton<ITTSEngine, OpenTtsEngine>();
-builder.Services.AddHttpClient<IOllamaClient, OllamaClient>();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddHttpClient("ollama");
+builder.Services.AddSingleton<IOllamaClient, OllamaClient>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Logging.AddConsole();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -21,12 +56,32 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
 app.Use(async (context, next) =>
 {
-    Console.WriteLine($"Incoming request: {context.Request.Method} {context.Request.Path}");
+    context.Request.EnableBuffering(); 
+    await next.Invoke();
+});
+
+
+app.Use(async (context, next) =>
+{
+
+    if (context.Request.Headers.TryGetValue("Content-Encoding", out var encoding) &&
+        encoding.ToString().Equals("gzip", StringComparison.OrdinalIgnoreCase))
+    {
+        // Buffer the gzip stream to memory
+        var originalStream = context.Request.Body;
+        using var decompressedStream = new GZipStream(originalStream, CompressionMode.Decompress);
+        var memoryStream = new MemoryStream();
+        await decompressedStream.CopyToAsync(memoryStream);
+        memoryStream.Seek(0, SeekOrigin.Begin);
+        context.Request.Body = memoryStream;
+    }
+
+
     await next();
 });
-app.UseAuthorization();
 
 app.MapControllers();
 
