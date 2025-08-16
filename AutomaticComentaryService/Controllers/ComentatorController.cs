@@ -18,6 +18,7 @@ namespace AutomaticComentaryService.Controllers
         private static readonly object _stateLock = new();
         private static GameState _lastState = new();
         private static Guid matchid = new();
+        private static Guid lastMatchid = new();
         public static GameState LastState
         {
             get { lock (_stateLock) return _lastState; }
@@ -40,7 +41,6 @@ namespace AutomaticComentaryService.Controllers
             var rawJson = await reader.ReadToEndAsync(cancellationToken);
             var request = JsonConvert.DeserializeObject<ComentaryRequest>(rawJson);
             ComentaryQueueModel.Instance.MessageQueueEnqueue(request);
-            LastState = request.GameState;
 
             return Ok();
         }
@@ -50,6 +50,7 @@ namespace AutomaticComentaryService.Controllers
         public IActionResult AddNewGame(CancellationToken cancellationToken = default)
         {
             matchid = Guid.NewGuid();
+
             ComentaryQueueModel.Instance.Reset();
             return Ok(matchid);
         }
@@ -58,20 +59,26 @@ namespace AutomaticComentaryService.Controllers
         public async Task<IActionResult> Get()
         {
             string prompt = "";
-            if(ComentaryQueueModel.Instance.GetMessageCount() == 0)
+            string? whitelistSystem = null;
+            if (ComentaryQueueModel.Instance.GetMessageCount() == 0)
             {
                 prompt = CommentaryPromptBuilder.BuildStalingPrompt();
             }
             else
             {
-                prompt = CommentaryPromptBuilder.BuildPrompt(ComentaryController.LastState,ComentaryQueueModel.Instance.MessageQueuePeek().GameState) ;
+                var currentState = ComentaryQueueModel.Instance.MessageQueuePeek().GameState;
+                prompt = CommentaryPromptBuilder.BuildPrompt( currentState, ComentaryController.LastState, lastMatchid!=matchid) ;
+                ComentaryController.LastState = currentState;
+                lastMatchid = matchid;
+                whitelistSystem = CommentaryWhitelistPrompt.Build(currentState);
             }
             _logger.LogDebug(prompt);
-            return await CommentateAsync(prompt, matchid.ToString());
+            
+            return await CommentateAsync(prompt,whitelistSystem, matchid.ToString());
         }
         [HttpPost("comentate")]
         public async Task<IActionResult> CommentateAsync(
-            [FromBody] string prompt,string matchid = "random",
+            [FromBody] string prompt,string? whitelistSystem,string matchid = "random",
                 CancellationToken ct = default)
         {
             var sessionId = matchid ;
@@ -79,11 +86,44 @@ namespace AutomaticComentaryService.Controllers
             var commentary = await _ollama.ChatAsync(
                 sessionId: sessionId,
                 userMessage: prompt,
+                whitelistSystem: whitelistSystem,
                 model: "llama3:8b",
                 ct);
             _logger.LogDebug(commentary);
+            await SavePromptAndCommentaryAsync(sessionId, prompt, commentary, ct);
             var filename = await _tts.GenerateWavAsync(commentary);
             return Ok(new { commentary, audioFile = filename });
+        }
+
+        private async Task SavePromptAndCommentaryAsync(
+    string sessionId,
+    string prompt,
+    string commentary,
+    CancellationToken ct = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var timestamp = now.ToString("yyyyMMdd_HHmmssfff");
+            var safeSession = SanitizeForFileName(sessionId);
+
+            var baseDir = Environment.GetEnvironmentVariable("DATA_DIR")
+                         ?? Path.Combine(AppContext.BaseDirectory, "data");
+
+            var dir = Path.Combine(baseDir, now.ToString("yyyy"), now.ToString("MM"), now.ToString("dd"), safeSession);
+            Directory.CreateDirectory(dir);
+
+            var promptPath = Path.Combine(dir, $"{timestamp}_{safeSession}_prompt.txt");
+            var commentaryPath = Path.Combine(dir, $"{timestamp}_{safeSession}_commentary.txt");
+
+            await System.IO.File.WriteAllTextAsync(promptPath, prompt ?? string.Empty, ct);
+            await System.IO.File.WriteAllTextAsync(commentaryPath, commentary ?? string.Empty, ct);
+        }
+
+        private static string SanitizeForFileName(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return "unknown";
+            var invalid = Path.GetInvalidFileNameChars();
+            var sanitized = new string(input.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+            return sanitized.Length == 0 ? "unknown" : sanitized;
         }
 
 

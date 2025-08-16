@@ -9,13 +9,25 @@ public sealed class OllamaChatMessage
 
 public sealed class OllamaChatRequest
 {
-    [JsonProperty("model")] public string Model { get; set; } = "llama3";
-    [JsonProperty("messages")] public List<OllamaChatMessage> Messages { get; set; } = new();
-    [JsonProperty("stream")] public bool Stream { get; set; } = false;
+    [JsonProperty("model")]
+    public string Model { get; set; } = "llama3";
+
+    [JsonProperty("messages")]
+    public List<OllamaChatMessage> Messages { get; set; } = new();
+
+    [JsonProperty("stream")]
+    public bool Stream { get; set; } = false;
 
     // Optional knobs:
-    [JsonProperty("keep_alive")] public string? KeepAlive { get; set; } = "10m";
-    [JsonProperty("context")] public int[]? Context { get; set; }
+    [JsonProperty("keep_alive")]
+    public string? KeepAlive { get; set; } = "10m";
+
+    [JsonProperty("context")]
+    public int[]? Context { get; set; }
+
+    // NEW: Options map for inference parameters
+    [JsonProperty("options")]
+    public Dictionary<string, object>? Options { get; set; }
 }
 
 public sealed class OllamaChatResponse

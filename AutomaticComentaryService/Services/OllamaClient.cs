@@ -30,7 +30,9 @@ public sealed class OllamaClient : IOllamaClient
     public async Task<string> ChatAsync(
         string sessionId,
         string userMessage,
+        string? whitelistSystem = null,
         string model = "llama3",
+        
         CancellationToken ct = default)
     {
         var session = _sessions.GetOrAdd(sessionId, _ =>
@@ -45,7 +47,7 @@ public sealed class OllamaClient : IOllamaClient
         var reducedHistory = new List<OllamaChatMessage>();
 
         // 1. Always keep the system prompt
-        reducedHistory.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt });
+        reducedHistory.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt +"\n"+ whitelistSystem});
 
         // 2. Keep last N assistant messages
         var lastAssistants = session.Messages
@@ -64,9 +66,20 @@ public sealed class OllamaClient : IOllamaClient
             Stream = false,
             KeepAlive = "10m",
             Context = session.Context,
+            Options = new Dictionary<string, object>
+            {
+                ["temperature"] = 0.2,
+                ["top_p"] = 0.9,
+                ["repeat_penalty"] = 1.15,
+                ["num_ctx"] = 8192,           
+                ["stop"] = new[] { "###", "\n\n\n", "welcome", "folks", "stay tuned" }
+            }
         };
 
-        using var resp = await _http.PostAsJsonAsync("api/chat", request, ct);
+        var requestjson = Newtonsoft.Json.JsonConvert.SerializeObject(request,new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
+
+        using var content = new StringContent(requestjson, System.Text.Encoding.UTF8, "application/json");
+        using var resp = await _http.PostAsync("api/chat", content, ct);
         resp.EnsureSuccessStatusCode();
 
         var json = await resp.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken: ct);
