@@ -94,7 +94,7 @@ tactical events:
 {tacticalString}
 
 new actions:
-{GetRecentActions()}
+{string.Join("\n", GetRecentActions())}
 
 current:
 {currentGameData}
