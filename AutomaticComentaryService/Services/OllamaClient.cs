@@ -14,7 +14,8 @@ public sealed class OllamaClient : IOllamaClient
         public List<OllamaChatMessage> Messages { get; } = new();
         public int[]? Context { get; set; }
         public string Model { get; set; } = "llama3";
-        public bool HasSystem => Messages.Count > 0 && Messages[0].Role == "system";
+
+        public string LastSystemKey { get; set; } = "";
     }
 
     private readonly ConcurrentDictionary<string, Session> _sessions = new();
@@ -26,7 +27,7 @@ public sealed class OllamaClient : IOllamaClient
         if (_http.BaseAddress is null)
             _http.BaseAddress = new Uri("http://host.docker.internal:11434");
     }
-
+    private const int K = 4;
     public async Task<string> ChatAsync(
         string sessionId,
         string userMessage,
@@ -42,39 +43,47 @@ public sealed class OllamaClient : IOllamaClient
             return s;
         });
 
-
+        string system = Modelfile.SystemPrompt + "\n" + whitelistSystem;
         // Set/refresh model if provided
-        var reducedHistory = new List<OllamaChatMessage>();
+        string systemKey = $"{model}\n{system}";
+        if (!string.Equals(session.LastSystemKey, systemKey, StringComparison.Ordinal))
+        {
+            session.Context = null;
+            session.LastSystemKey = systemKey;
+            session.Model = model;
+        }
 
-        // 1. Always keep the system prompt
-        reducedHistory.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt +"\n"+ whitelistSystem});
+        var reduced = new List<OllamaChatMessage>
+    {
+        new() { Role = "system", Content = system }
+    };
 
-        // 2. Keep last N assistant messages
-        var lastAssistants = session.Messages
-            .Where(m => m.Role == "assistant")
-            .TakeLast(MaxAssistantMemory)
-            .ToList();
-        reducedHistory.AddRange(lastAssistants);
+        // keep last K *turns* (user+assistant), not just assistants
+        var tail = session.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(K * 2).ToList();
+        reduced.AddRange(tail);
 
-        // 3. Add current user prompt
-        reducedHistory.Add(new OllamaChatMessage { Role = "user", Content = userMessage });
+        // current turn last
+        reduced.Add(new OllamaChatMessage { Role = "user", Content = userMessage });
 
         var request = new OllamaChatRequest
         {
             Model = model,
-            Messages = reducedHistory,
+            Messages = reduced,
             Stream = false,
             KeepAlive = "10m",
             Context = session.Context,
             Options = new Dictionary<string, object>
             {
-                ["temperature"] = 0.2,
+                ["temperature"] = 0.25,
                 ["top_p"] = 0.9,
                 ["repeat_penalty"] = 1.15,
-                ["num_ctx"] = 8192,           
-                ["stop"] = new[] { "###", "\n\n\n", "welcome", "folks", "stay tuned" }
+                ["num_ctx"] = 8192,
+                // soft braking on listy/meta openers and banned phrases
+                ["stop"] = new[] { "\n- ", "\n* ", "\n1) ", "\n1. ", "welcome", "folks", "stay tuned", "we're live" }
             }
         };
+
+       
 
         var requestjson = Newtonsoft.Json.JsonConvert.SerializeObject(request,new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
 
@@ -104,19 +113,6 @@ public sealed class OllamaClient : IOllamaClient
         return Task.CompletedTask;
     }
 
-    public void TrimSession(string sessionId, int maxUserAssistantPairs = 10)
-    {
-        if (!_sessions.TryGetValue(sessionId, out var session)) return;
-
-        var start = session.HasSystem ? 1 : 0;
-        var tail = session.Messages.Skip(start).ToList();
-
-        var maxMsgs = Math.Max(0, Math.Min(tail.Count, maxUserAssistantPairs * 2));
-        var trimmedTail = tail.Skip(Math.Max(0, tail.Count - maxMsgs)).ToList();
-
-        session.Messages.Clear();
-        session.Messages.Add(new OllamaChatMessage { Role = "system", Content = Modelfile.SystemPrompt });
-        session.Messages.AddRange(trimmedTail);
-    }
+   
 
 }

@@ -66,7 +66,7 @@ namespace AutomaticComentaryService.Controllers
             }
             else
             {
-                var currentState = ComentaryQueueModel.Instance.MessageQueuePeek().GameState;
+                var currentState = ComentaryQueueModel.Instance.MessageQueuePeekLast().GameState;
                 prompt = CommentaryPromptBuilder.BuildPrompt( currentState, ComentaryController.LastState, lastMatchid!=matchid) ;
                 ComentaryController.LastState = currentState;
                 lastMatchid = matchid;

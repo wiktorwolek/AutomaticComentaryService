@@ -39,11 +39,11 @@ namespace AutomaticComentaryService.Models
             }
         }
 
-        public ComentaryRequest MessageQueuePeek()
+        public ComentaryRequest MessageQueuePeekLast()
         {
             lock (_messageLock)
             {
-                return _messageQueue.Peek();
+                return _messageQueue.Last();
             }
         }
 

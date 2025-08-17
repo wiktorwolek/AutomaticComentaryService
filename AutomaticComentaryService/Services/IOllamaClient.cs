@@ -20,7 +20,6 @@ namespace AutomaticComentaryService.Services
         /// <summary>Reset (forget) a chat session.</summary>
         Task ResetSessionAsync(string sessionId);
 
-        /// <summary>Optionally trim history to last N turns to save tokens.</summary>
-        void TrimSession(string sessionId, int maxUserAssistantPairs = 10);
+        
     }
 }

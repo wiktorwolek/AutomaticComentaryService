@@ -67,42 +67,42 @@ namespace AutomaticComentaryService.Models
                       || e.Contains("possession", StringComparison.OrdinalIgnoreCase);
                 prioritized.Add($"[{(hi ? "PRIORITY: HIGH" : "PRIORITY: MED")}] {e}");
             }
-
+            var teamA = currentGameState.Teams[0].Name ?? "team a";
+            var teamB = currentGameState.Teams[1].Name ?? "team b";
             string tacticalString = haveEvents ? string.Join("\n", prioritized) : "none";
+            Console.WriteLine(tacticalString);
+            var prompt = $@"
+you are a live blood bowl commentator. output 1–3 punchy one-liners about the newest developments only for {teamA} vs {teamB}.
 
-            string prompt = $"""
-you are a live blood bowl commentator. write 1–3 vivid one-liners about the **newest developments** only. You are commenting on game between {currentGameState.Teams[0].Name} vs {currentGameState.Teams[1].Name}
+hard rules:
+- output only the lines, lowercase; no intros, no meta text, no lists, no markdown.
+- 1–3 lines total, max 18 words per line.
+- if unsure or nothing notable happened, output nothing.
+- use only team and player names found in the current game state.
 
-naming discipline:
-- use only team and player names that appear in the states below; never invent teams or players. try not to repeat yourself.
+newest developments priority:
+1) tactical events changed this update (cage formed/broken/weakening/strengthening; screen formed/broken; sideline threat; stalling).
+2) notable actions: blitz, block result (down/push/surf/ko/cas), pickup, pass+catch, handoff, foul, surf, turnover, ball carrier moved.
+3) brief observation about resulting board shape only if it sharpens the line.
 
-focus order:
-1) tactical events (rewrite them into live commentary first; if "none", skip)
-2) new actions (only if notable: blitz, block result, pickup, pass/catch, foul, surf, turnover, ball carrier moved)
-3) your observations for provided board state
-
-style:
-- punchy, 1–3 standalone lines total
-- prefer concrete impact: cages/screens formed or broken, ball pickups/steals, surfs, turnovers
-- if unsure, skip rather than guess
-- try not to repeat yourself
-- make sure to integrate your commentary with previous lines
+blood bowl terms (concise):
+- cage = 4 teammates around carrier; call out formed/broken/weak/strengthening; missing corners = leaking/weak.
+- screen = defensive line; only say when newly formed or broken.
+- surf = pushed off the pitch. turnover = failed action that ends the turn.
 
 tactical events:
 {tacticalString}
 
 new actions:
-{string.Join("\n", GetRecentActions())}
+{GetRecentActions()}
 
 current:
 {currentGameData}
-
 previous:
 {lastGameData}
+";
 
-""";
-
-            return prompt;
+            return prompt.Trim();
         }
 
 
