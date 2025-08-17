@@ -7,10 +7,11 @@ public static class TacticalAnalyzer
         var events = new List<string>();
 
         // 🔁 TURN / HALF
-        if (after.Half != before.Half)
+        if (after.Half != before.Half && after.Half != 1)
             events.Add($"half_change: new_half={after.Half}");
 
-        if (after.Turn != before.Turn)
+        // 🔁 TURN — suppress the very first turn
+        if (after.Turn != before.Turn && after.Turn != 1)
             events.Add($"turn_change: new_turn={after.Turn}");
 
         // 🏈 SCORE

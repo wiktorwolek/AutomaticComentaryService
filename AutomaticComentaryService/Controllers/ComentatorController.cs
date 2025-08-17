@@ -87,7 +87,7 @@ namespace AutomaticComentaryService.Controllers
                 sessionId: sessionId,
                 userMessage: prompt,
                 whitelistSystem: whitelistSystem,
-                model: "llama3:8b",
+                model: "llama3.1:8b",
                 ct);
             _logger.LogDebug(commentary);
             await SavePromptAndCommentaryAsync(sessionId, prompt, commentary, ct);

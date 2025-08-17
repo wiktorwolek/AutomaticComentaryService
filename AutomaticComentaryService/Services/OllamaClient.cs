@@ -78,8 +78,6 @@ public sealed class OllamaClient : IOllamaClient
                 ["top_p"] = 0.9,
                 ["repeat_penalty"] = 1.15,
                 ["num_ctx"] = 8192,
-                // soft braking on listy/meta openers and banned phrases
-                ["stop"] = new[] { "\n- ", "\n* ", "\n1) ", "\n1. ", "welcome", "folks", "stay tuned", "we're live" }
             }
         };
 
