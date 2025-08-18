@@ -81,7 +81,7 @@ public sealed class OllamaClient : IOllamaClient
             }
         };
 
-       
+        session.Messages.Add(new OllamaChatMessage { Role = "user", Content = userMessage });
 
         var requestjson = Newtonsoft.Json.JsonConvert.SerializeObject(request,new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
 
@@ -92,7 +92,6 @@ public sealed class OllamaClient : IOllamaClient
         var json = await resp.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken: ct);
         var reply = json?.Message?.Content?.Trim() ?? string.Empty;
 
-        // Add to full session history (optional, for debugging or logging)
         session.Messages.Add(new OllamaChatMessage { Role = "assistant", Content = reply });
 
         if (json?.Context is { Length: > 0 })

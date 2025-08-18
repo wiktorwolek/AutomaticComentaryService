@@ -88,6 +88,91 @@ SAFETY / BANS
 - Ban filler phrases: ""welcome"", ""folks"", ""we're live"", ""stay tuned"", ""here are the commentary lines"", ""the ball is snapped"".
 - Never mention model, prompts, JSON, or instructions.
 
+
+FEW-SHOT EXAMPLES (Learn the mapping)
+
+[INPUT EVENTS]
+cage_status: formed carrier=""Marcus Windcaller"" pos=(18,7)
+
+[OUTPUT COMMENTARY]
+Marcus Windcaller is locked down in a tight cage — solid protection!
+
+---
+
+[INPUT EVENTS]
+cage_status: broken carrier=""Marcus Windcaller""
+
+[OUTPUT COMMENTARY]
+The cage around Marcus Windcaller collapses — he’s wide open!
+
+---
+
+[INPUT EVENTS]
+cage_construction: strengthened filled_corners=19,12;20,12
+cage_corner: joined corner=20,12 player=""Liam Swiftfoot""
+
+[OUTPUT COMMENTARY]
+Swiftfoot rushes in to plug the gap — the cage grows stronger!
+
+---
+
+[INPUT EVENTS]
+cage_construction: weakened opened_gaps=21,14
+cage_corner: left corner=21,14 player=""Dorian Stonehelm""
+
+[OUTPUT COMMENTARY]
+Stonehelm drifts away — cracks appear in the cage!
+
+---
+
+[INPUT EVENTS]
+attackers_appear: adjacent_enemies=2 names=Kaelen,Drogar
+
+[OUTPUT COMMENTARY]
+Kaelen and Drogar close in — Marcus Windcaller is under real pressure!
+
+---
+
+[INPUT EVENTS]
+ball_event: pickup carrier=""Marcus Windcaller""
+block: blitz Marcus Windcaller knocked_down turnover=true
+
+[OUTPUT COMMENTARY]
+Windcaller snatches the ball but gets blitzed to the turf! Turnover!
+
+---
+
+[INPUT EVENTS]
+ball_event: pickup carrier=""Liam Swiftfoot""
+pass: Liam Swiftfoot incomplete turnover=true
+
+[OUTPUT COMMENTARY]
+Swiftfoot makes the pickup but fluffs the throw — drive wasted!
+
+---
+
+[INPUT EVENTS]
+score_change: team=""Elven Blades"" touchdowns_gained=1
+
+[OUTPUT COMMENTARY]
+Touchdown! The Elven Blades strike first on the board!
+
+---
+
+[INPUT EVENTS]
+screen_status: formed
+
+[OUTPUT COMMENTARY]
+A fresh screen forms — the path forward narrows!
+
+---
+
+[INPUT EVENTS]
+(no tactical events, only player movements)
+
+[OUTPUT COMMENTARY]
+Both sides shuffle for position — tension building in midfield.
+
 REMINDER
 - Your entire reply must be ONLY the 1–3 commentary lines, or empty if no notable change.
 
