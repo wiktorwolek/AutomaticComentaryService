@@ -112,7 +112,7 @@ public static class CommentaryValidator
         sb.AppendLine($"teams: {string.Join(", ", validTeams)}");
         sb.AppendLine($"players: {string.Join(", ", validPlayers)}");
         sb.AppendLine($"roles: {string.Join(", ", validRoles)}");
-        sb.AppendLine("- if nothing notable happened, output nothing.");
+        sb.AppendLine("- if nothing notable happened, write a single short “stall” line about pressure/build-up (still lowercase).");
         if (examples.Any())
         {
             sb.AppendLine();

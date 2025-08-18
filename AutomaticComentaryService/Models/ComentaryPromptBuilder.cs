@@ -61,8 +61,8 @@ namespace AutomaticComentaryService.Models
                       || e.Contains("injur", StringComparison.OrdinalIgnoreCase)
                       || e.Contains("ko", StringComparison.OrdinalIgnoreCase)
                       || e.Contains("surf", StringComparison.OrdinalIgnoreCase)
-                      || e.Contains("cage", StringComparison.OrdinalIgnoreCase)
-                      || e.Contains("screen", StringComparison.OrdinalIgnoreCase)
+                      || e.Contains("cage_status: formed", StringComparison.OrdinalIgnoreCase)
+                      || e.Contains("cage_status: broken", StringComparison.OrdinalIgnoreCase)
                       || e.Contains("picked up the ball", StringComparison.OrdinalIgnoreCase)
                       || e.Contains("possession", StringComparison.OrdinalIgnoreCase);
                 prioritized.Add($"[{(hi ? "PRIORITY: HIGH" : "PRIORITY: MED")}] {e}");

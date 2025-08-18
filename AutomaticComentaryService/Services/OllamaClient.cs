@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AutomaticComentaryService.Constants;
 using AutomaticComentaryService.Services;
 
 public sealed class OllamaClient : IOllamaClient
@@ -78,12 +79,13 @@ public sealed class OllamaClient : IOllamaClient
                 ["top_p"] = 0.9,
                 ["repeat_penalty"] = 1.15,
                 ["num_ctx"] = 8192,
+                ["stop"]=BannedPhrases.Items
             }
         };
 
         session.Messages.Add(new OllamaChatMessage { Role = "user", Content = userMessage });
 
-        var requestjson = Newtonsoft.Json.JsonConvert.SerializeObject(request,new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore });
+        var requestjson = Newtonsoft.Json.JsonConvert.SerializeObject(request,new Newtonsoft.Json.JsonSerializerSettings { NullValueHandling =  Newtonsoft.Json.NullValueHandling.Ignore });
 
         using var content = new StringContent(requestjson, System.Text.Encoding.UTF8, "application/json");
         using var resp = await _http.PostAsync("api/chat", content, ct);
