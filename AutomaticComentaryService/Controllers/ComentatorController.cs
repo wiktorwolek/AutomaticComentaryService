@@ -1,10 +1,13 @@
 ﻿using System.Collections.Concurrent;
+using System.Text;
 using AutomaticComentaryService.Constants;
 using AutomaticComentaryService.Models;
 using AutomaticComentaryService.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using System.Security.Cryptography;
+using Newtonsoft.Json.Linq;
 
 namespace AutomaticComentaryService.Controllers
 {
@@ -69,44 +72,203 @@ namespace AutomaticComentaryService.Controllers
 
             _logger.LogDebug(prompt);
 
+            var dto = new ComentaryDto
+            {
+                Prompt = prompt,
+                WhitelistSystem = whitelistSystem,
+                GameState = currentState,
+                MatchId = _matchId.ToString()
+            };
+
             // keep your internal call pattern
-            return await CommentateAsync(
-                prompt: prompt,
-                whitelistSystem: whitelistSystem,
-                gamestate: currentState,
-                matchid: _matchId.ToString(),
-                ct: ct);
+            return await CommentateAsync(dto, ct);
         }
 
-        // NOTE: This route signature is fine because you call it internally.
-        // If you ever want to POST from outside, create a DTO request body instead.
+
         [HttpPost("comentate")]
         public async Task<IActionResult> CommentateAsync(
-            [FromBody] string prompt,
-            string? whitelistSystem,
-            GameState gamestate,
-            string matchid = "random",
-            CancellationToken ct = default)
+        [FromBody] ComentaryDto dto,
+         CancellationToken ct = default)
         {
-            var sessionId = matchid;
+            await SaveComentateBundleAsync(
+    sessionId: dto.MatchId,
+    prompt: dto.Prompt,
+    whitelistSystem: dto.WhitelistSystem,
+    gameState: dto.GameState,
+    ct: ct);
+            var sessionId = dto.MatchId;
 
             // 1) generate
-            var commentary = await GenerateCommentaryAsync(sessionId, prompt, whitelistSystem, ct);
+            var commentary = await GenerateCommentaryAsync(
+                sessionId: sessionId,
+                prompt: dto.Prompt,
+                whitelistSystem: dto.WhitelistSystem,
+                ct: ct);
 
             // 2) validate/repair
-            commentary = await ValidateOrRepairAsync(sessionId, commentary, whitelistSystem, gamestate, ct);
+            commentary = await ValidateOrRepairAsync(
+                sessionId: sessionId,
+                commentary: commentary,
+                whitelistSystem: dto.WhitelistSystem,
+                gamestate: dto.GameState,
+                ct: ct);
 
             // 3) persist + tts
             _logger.LogDebug(commentary);
-            await SavePromptAndCommentaryAsync(sessionId, prompt, commentary, ct);
+
+            await SavePromptAndCommentaryAsync(sessionId, dto.Prompt, commentary, ct);
 
             var filename = await _tts.GenerateWavAsync(commentary);
             return Ok(new { commentary, audioFile = filename });
         }
 
+
+
         // ---------------------------
         // Helpers: Prompt building
         // ---------------------------
+
+       
+
+        public class ComentateReplayEnvelope
+        {
+            public string Schema { get; set; } = "comentate-replay.v1";
+            public string TimestampUtc { get; set; } = DateTimeOffset.UtcNow.ToString("O");
+            public string SessionId { get; set; } = string.Empty;
+
+            // Exact payload for /comentate
+            public ComentaryDto Request { get; set; } = new();
+
+            // SHA-256 of canonicalized Request (stable, property-sorted JSON)
+            public string ContentHashSha256 { get; set; } = string.Empty;
+        }
+
+        public sealed record LoadedComentateBundle(
+            ComentaryDto Request,
+            bool IntegrityOk,
+            string ExpectedHash,
+            string ActualHash,
+            string SourcePath);
+
+        private async Task<string> SaveComentateBundleAsync(
+            string sessionId,
+            string prompt,
+            string? whitelistSystem,
+            GameState gameState,
+            CancellationToken ct = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var timestamp = now.ToString("yyyyMMdd_HHmmssfff");
+            var safeSession = SanitizeForFileName(sessionId);
+
+            var baseDir = Environment.GetEnvironmentVariable("DATA_DIR")
+                          ?? Path.Combine(AppContext.BaseDirectory, "data");
+            var dir = Path.Combine(baseDir, now.ToString("yyyy"), now.ToString("MM"), now.ToString("dd"), safeSession);
+            Directory.CreateDirectory(dir);
+
+            var requestDto = new ComentaryDto
+            {
+                Prompt = prompt ?? string.Empty,
+                WhitelistSystem = whitelistSystem,
+                GameState = gameState ?? new GameState(),
+                MatchId = sessionId
+            };
+
+            // Canonical JSON (property-sorted, minified) → stable hash
+            var canonical = ToCanonicalJson(requestDto);
+            var hash = Sha256Hex(canonical);
+
+            var envelope = new ComentateReplayEnvelope
+            {
+                SessionId = sessionId,
+                TimestampUtc = now.ToString("O"),
+                Request = requestDto,
+                ContentHashSha256 = hash
+            };
+
+            var pretty = JsonConvert.SerializeObject(
+                envelope,
+                new JsonSerializerSettings
+                {
+                    Formatting = Formatting.Indented,
+                    NullValueHandling = NullValueHandling.Ignore,
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                });
+
+            // Include short hash fragment in filename for quick grepping
+            var shortHash = hash[..12];
+            var bundlePath = Path.Combine(dir, $"{timestamp}_{safeSession}_{shortHash}_comentate.bundle.json");
+
+            await System.IO.File.WriteAllTextAsync(bundlePath, pretty, ct);
+            return bundlePath;
+        }
+
+        private async Task<LoadedComentateBundle?> LoadComentateBundleAsync(
+            string path,
+            CancellationToken ct = default)
+        {
+            if (!System.IO.File.Exists(path)) return null;
+
+            var json = await System.IO.File.ReadAllTextAsync(path, ct);
+            var env = JsonConvert.DeserializeObject<ComentateReplayEnvelope>(json);
+            if (env is null) return null;
+
+            // Recompute hash to verify integrity / sameness
+            var canonical = ToCanonicalJson(env.Request);
+            var actual = Sha256Hex(canonical);
+            var expected = env.ContentHashSha256 ?? string.Empty;
+
+            return new LoadedComentateBundle(
+                Request: env.Request,
+                IntegrityOk: string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase),
+                ExpectedHash: expected,
+                ActualHash: actual,
+                SourcePath: path
+            );
+        }
+
+        // ---------- Canonicalization + Hash helpers ----------
+
+        private static string ToCanonicalJson(object obj)
+        {
+            // 1) Convert to JToken with safe settings
+            var serializer = JsonSerializer.CreateDefault(new JsonSerializerSettings
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+            });
+
+            var token = JToken.FromObject(obj, serializer);
+
+            // 2) Recursively sort object properties by name (arrays kept in order)
+            static JToken Canon(JToken t) =>
+                t switch
+                {
+                    JObject o => new JObject(o.Properties()
+                                              .OrderBy(p => p.Name, StringComparer.Ordinal)
+                                              .Select(p => new JProperty(p.Name, Canon(p.Value)))),
+                    JArray a => new JArray(a.Select(Canon)),
+                    _ => t
+                };
+
+            var canonicalToken = Canon(token);
+
+            // 3) Minified JSON
+            using var sw = new StringWriter();
+            using var writer = new JsonTextWriter(sw) { Formatting = Formatting.None };
+            canonicalToken.WriteTo(writer);
+            writer.Flush();
+            return sw.ToString();
+        }
+
+        private static string Sha256Hex(string input)
+        {
+            using var sha = SHA256.Create();
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(input ?? string.Empty));
+            var sb = new StringBuilder(bytes.Length * 2);
+            foreach (var b in bytes) sb.Append(b.ToString("x2"));
+            return sb.ToString();
+        }
 
         private (string Prompt, string? Whitelist) BuildPrompt(GameState currentState)
         {
